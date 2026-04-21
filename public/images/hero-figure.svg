@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" viewBox="0 0 500 500">
+  <!-- Background -->
+  <rect width="500" height="500" fill="#f0fdf4" rx="20"/>
+  
+  <!-- Figure shadow -->
+  <ellipse cx="250" cy="440" rx="80" ry="15" fill="#d1fae5" opacity="0.8"/>
+  
+  <!-- Body (cylinder-like) -->
+  <rect x="195" y="270" width="110" height="130" rx="20" fill="#15803d"/>
+  <!-- Body highlight -->
+  <rect x="205" y="280" width="40" height="110" rx="10" fill="#16a34a" opacity="0.5"/>
+  
+  <!-- Collar/neck -->
+  <rect x="225" y="255" width="50" height="30" rx="8" fill="#15803d"/>
+  
+  <!-- Head (big round) -->
+  <circle cx="250" cy="200" r="90" fill="#fde68a"/>
+  <!-- Head highlight -->
+  <circle cx="220" cy="170" r="30" fill="#fef3c7" opacity="0.6"/>
+  
+  <!-- Eyes -->
+  <circle cx="220" cy="195" r="18" fill="white"/>
+  <circle cx="280" cy="195" r="18" fill="white"/>
+  <circle cx="224" cy="198" r="12" fill="#1c1917"/>
+  <circle cx="284" cy="198" r="12" fill="#1c1917"/>
+  <!-- Eye shine -->
+  <circle cx="229" cy="193" r="4" fill="white"/>
+  <circle cx="289" cy="193" r="4" fill="white"/>
+  
+  <!-- Eyebrows -->
+  <path d="M205 175 Q220 168 235 175" stroke="#1c1917" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M265 175 Q280 168 295 175" stroke="#1c1917" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Nose -->
+  <circle cx="250" cy="215" r="4" fill="#f59e0b" opacity="0.6"/>
+  
+  <!-- Smile -->
+  <path d="M230 230 Q250 248 270 230" stroke="#dc2626" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Cheeks -->
+  <circle cx="200" cy="220" r="15" fill="#fca5a5" opacity="0.5"/>
+  <circle cx="300" cy="220" r="15" fill="#fca5a5" opacity="0.5"/>
+  
+  <!-- Hair -->
+  <path d="M165 185 Q160 120 250 110 Q340 120 335 185 Q320 140 250 135 Q180 140 165 185Z" fill="#1c1917"/>
+  <!-- Hair side left -->
+  <path d="M165 185 Q150 220 160 260 Q170 230 175 210Z" fill="#1c1917"/>
+  <!-- Hair side right -->
+  <path d="M335 185 Q350 220 340 260 Q330 230 325 210Z" fill="#1c1917"/>
+  
+  <!-- Arms -->
+  <rect x="140" y="275" width="55" height="30" rx="15" fill="#fde68a"/>
+  <rect x="305" y="275" width="55" height="30" rx="15" fill="#fde68a"/>
+  <!-- Hands -->
+  <circle cx="140" cy="290" r="20" fill="#fde68a"/>
+  <circle cx="360" cy="290" r="20" fill="#fde68a"/>
+  
+  <!-- Legs -->
+  <rect x="205" y="390" width="38" height="50" rx="10" fill="#1c1917"/>
+  <rect x="257" y="390" width="38" height="50" rx="10" fill="#1c1917"/>
+  
+  <!-- Shoes -->
+  <ellipse cx="224" cy="440" rx="28" ry="14" fill="#f5f5f4"/>
+  <ellipse cx="276" cy="440" rx="28" ry="14" fill="#f5f5f4"/>
+  
+  <!-- Shirt pocket details -->
+  <rect x="210" y="290" width="28" height="22" rx="4" fill="#166534" stroke="#15803d" stroke-width="1"/>
+  <rect x="262" y="290" width="28" height="22" rx="4" fill="#166534" stroke="#15803d" stroke-width="1"/>
+  
+  <!-- Buttons -->
+  <circle cx="250" cy="305" r="4" fill="#166534"/>
+  <circle cx="250" cy="325" r="4" fill="#166534"/>
+  <circle cx="250" cy="345" r="4" fill="#166534"/>
+  
+  <!-- White trim on shirt -->
+  <path d="M230 270 L250 285 L270 270" stroke="white" stroke-width="2" fill="none"/>
+</svg>

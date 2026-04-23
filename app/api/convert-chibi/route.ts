@@ -3,47 +3,47 @@ import { NextRequest, NextResponse } from "next/server";
 const FAL_KEY = process.env.FAL_KEY;
 
 /**
- * fal.ai — TRELLIS Image to 3D
+ * fal.ai — Cartoonify (Image to Chibi/Cartoon Image)
  *
- * Model terbaik untuk image-to-3D, output GLB langsung.
- * Harga: $0.02/model — free credits saat signup, tidak perlu upgrade.
+ * Model: fal-ai/cartoonify
+ * Mengubah foto menjadi gambar bergaya 3D cartoon/chibi (seperti PrintU)
+ * Output: gambar PNG — tidak perlu GLB atau 3D rendering
  *
+ * Harga: ~$0.003-0.005/gambar
  * Daftar di: https://fal.ai
  * API key di: https://fal.ai/dashboard/keys
  */
 
-const FAL_TRELLIS_URL = "https://queue.fal.run/fal-ai/trellis";
+const FAL_CARTOONIFY_URL = "https://queue.fal.run/fal-ai/cartoonify";
 
 interface FalQueueResponse {
   request_id: string;
-  status: string;
 }
 
 interface FalStatusResponse {
   status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
-  logs?: Array<{ message: string }>;
 }
 
-interface FalResultResponse {
-  model_mesh?: {
-    url: string;
-    content_type: string;
-    file_name: string;
-  };
-  video?: { url: string };
+interface FalImage {
+  url: string;
+  content_type: string;
 }
 
-const POLL_INTERVAL_MS = 3000;
-const TIMEOUT_MS = 180000;
+interface FalCartoonifyResult {
+  images: FalImage[];
+}
 
-async function uploadImageToFal(
+const POLL_INTERVAL_MS = 2000;
+const TIMEOUT_MS = 120000;
+
+async function uploadToFalStorage(
   imageBuffer: ArrayBuffer,
   mimeType: string,
 ): Promise<string> {
-  // Upload image to fal storage, get public URL
   const blob = new Blob([imageBuffer], { type: mimeType });
 
-  const uploadResponse = await fetch(
+  // Initiate upload
+  const initiateResponse = await fetch(
     "https://rest.fal.run/storage/upload/initiate",
     {
       method: "POST",
@@ -53,18 +53,18 @@ async function uploadImageToFal(
       },
       body: JSON.stringify({
         content_type: mimeType,
-        file_name: "upload.jpg",
+        file_name: "photo.jpg",
       }),
     },
   );
 
-  if (!uploadResponse.ok) {
-    throw new Error(`Storage initiate error: ${uploadResponse.status}`);
+  if (!initiateResponse.ok) {
+    throw new Error(`Storage initiate error: ${initiateResponse.status}`);
   }
 
-  const { upload_url, file_url } = await uploadResponse.json();
+  const { upload_url, file_url } = await initiateResponse.json();
 
-  // Upload actual file
+  // Upload file
   const putResponse = await fetch(upload_url, {
     method: "PUT",
     headers: { "Content-Type": mimeType },
@@ -78,8 +78,8 @@ async function uploadImageToFal(
   return file_url as string;
 }
 
-async function submitTrellisJob(imageUrl: string): Promise<string> {
-  const response = await fetch(FAL_TRELLIS_URL, {
+async function submitCartoonifyJob(imageUrl: string): Promise<string> {
+  const response = await fetch(FAL_CARTOONIFY_URL, {
     method: "POST",
     headers: {
       Authorization: `Key ${FAL_KEY}`,
@@ -87,8 +87,10 @@ async function submitTrellisJob(imageUrl: string): Promise<string> {
     },
     body: JSON.stringify({
       image_url: imageUrl,
-      mesh_simplify: 0.95,
-      texture_size: 1024,
+      scale: 1.2, // Slightly stronger cartoon effect
+      guidance_scale: 4.0, // Higher = more cartoon-like
+      num_inference_steps: 28,
+      enable_safety_checker: false,
     }),
   });
 
@@ -101,10 +103,10 @@ async function submitTrellisJob(imageUrl: string): Promise<string> {
   return data.request_id;
 }
 
-async function pollFalJob(requestId: string): Promise<string> {
+async function pollCartoonifyJob(requestId: string): Promise<string> {
   const startTime = Date.now();
-  const statusUrl = `https://queue.fal.run/fal-ai/trellis/requests/${requestId}/status`;
-  const resultUrl = `https://queue.fal.run/fal-ai/trellis/requests/${requestId}`;
+  const statusUrl = `https://queue.fal.run/fal-ai/cartoonify/requests/${requestId}/status`;
+  const resultUrl = `https://queue.fal.run/fal-ai/cartoonify/requests/${requestId}`;
 
   while (Date.now() - startTime < TIMEOUT_MS) {
     const statusResponse = await fetch(statusUrl, {
@@ -127,14 +129,14 @@ async function pollFalJob(requestId: string): Promise<string> {
         throw new Error(`Result fetch error: ${resultResponse.status}`);
       }
 
-      const result = (await resultResponse.json()) as FalResultResponse;
-      const glbUrl = result.model_mesh?.url;
+      const result = (await resultResponse.json()) as FalCartoonifyResult;
+      const imageUrl = result.images?.[0]?.url;
 
-      if (!glbUrl) {
-        throw new Error("GLB URL tidak tersedia dari hasil");
+      if (!imageUrl) {
+        throw new Error("Image URL tidak tersedia dari hasil");
       }
 
-      return glbUrl;
+      return imageUrl;
     }
 
     if (status.status === "FAILED") {
@@ -181,16 +183,16 @@ export async function POST(request: NextRequest) {
     const imageBuffer = await imageFile.arrayBuffer();
     const mimeType = imageFile.type || "image/jpeg";
 
-    // Upload image to fal storage
-    const imageUrl = await uploadImageToFal(imageBuffer, mimeType);
+    // Upload to fal storage
+    const imageUrl = await uploadToFalStorage(imageBuffer, mimeType);
 
-    // Submit TRELLIS job
-    const requestId = await submitTrellisJob(imageUrl);
+    // Submit cartoonify job
+    const requestId = await submitCartoonifyJob(imageUrl);
 
     // Poll until done
-    const glbUrl = await pollFalJob(requestId);
+    const chibiImageUrl = await pollCartoonifyJob(requestId);
 
-    return NextResponse.json({ success: true, glbUrl }, { status: 200 });
+    return NextResponse.json({ success: true, chibiImageUrl }, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[convert-chibi] Error:", message);

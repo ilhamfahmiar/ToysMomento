@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { Download } from "lucide-react";
 import { ChibiConverterProps } from "@/types";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import Button from "@/components/ui/Button";
@@ -13,30 +14,20 @@ type ConversionStatus =
   | "error"
   | "no_token";
 
-interface ConversionResult {
-  glbUrl: string;
-  thumbnailUrl?: string;
-}
-
-interface ExtendedChibiConverterProps extends ChibiConverterProps {
-  onConversionComplete: (glbUrl: string) => void;
-}
-
 const PROGRESS_STAGES = [
-  { pct: 10, label: "Menganalisis foto...", ms: 2000 },
-  { pct: 30, label: "Membuat struktur 3D...", ms: 10000 },
-  { pct: 55, label: "Menambahkan tekstur...", ms: 20000 },
-  { pct: 75, label: "Finishing model...", ms: 35000 },
-  { pct: 88, label: "Hampir selesai...", ms: 55000 },
+  { pct: 15, label: "Menganalisis foto...", ms: 1500 },
+  { pct: 40, label: "Menerapkan style chibi...", ms: 5000 },
+  { pct: 70, label: "Menyempurnakan detail...", ms: 10000 },
+  { pct: 88, label: "Hampir selesai...", ms: 18000 },
 ];
 
-const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
+const ChibiConverter: React.FC<ChibiConverterProps> = ({
   sourceFile,
   onConversionComplete,
   onConversionError,
 }) => {
   const [status, setStatus] = useState<ConversionStatus>("idle");
-  const [result, setResult] = useState<ConversionResult | null>(null);
+  const [chibiImageUrl, setChibiImageUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("Memulai...");
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -59,7 +50,7 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
 
   const convertImage = async () => {
     setStatus("converting");
-    setResult(null);
+    setChibiImageUrl(null);
     setProgress(5);
     setProgressLabel("Memulai...");
     startProgressAnimation();
@@ -88,9 +79,9 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
 
       setProgress(100);
       setProgressLabel("Selesai!");
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 400));
 
-      setResult({ glbUrl: data.glbUrl, thumbnailUrl: data.thumbnailUrl });
+      setChibiImageUrl(data.chibiImageUrl);
       setStatus("success");
     } catch (err) {
       clearTimers();
@@ -105,6 +96,16 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
     return () => clearTimers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleDownload = () => {
+    if (!chibiImageUrl) return;
+    const link = document.createElement("a");
+    link.href = chibiImageUrl;
+    link.download = "chibi-toysmomento.png";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleRetry = () => onConversionError();
 
@@ -127,9 +128,11 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
         </div>
         <div className="text-center space-y-1">
           <p className="text-sm text-gray-600 font-medium">
-            AI sedang membuat model 3D dari foto kamu
+            AI sedang mengubah foto kamu ke style chibi...
           </p>
-          <p className="text-xs text-gray-400">Proses membutuhkan 1–3 menit</p>
+          <p className="text-xs text-gray-400">
+            Proses membutuhkan 10–30 detik
+          </p>
         </div>
       </div>
     );
@@ -178,9 +181,8 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
               </a>{" "}
               → Create Key
             </li>
-            <li>Copy API key kamu</li>
             <li>
-              Buka file{" "}
+              Copy API key, buka{" "}
               <code className="bg-gray-200 px-1 rounded text-xs">
                 .env.local
               </code>
@@ -230,21 +232,21 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
 
   // ── Success ──────────────────────────────────────────────────
   return (
-    <div className="flex flex-col items-center gap-6 py-8">
+    <div className="flex flex-col items-center gap-8 py-8">
       <div className="text-center">
         <h2 className="text-2xl font-display font-bold text-primary mb-2">
-          Model 3D Kamu Sudah Jadi! 🎉
+          Chibi Kamu Sudah Jadi! 🎉
         </h2>
         <p className="text-gray-600 text-sm">
-          Lanjut lihat preview 3D interaktif!
+          Foto kamu sudah diubah ke style chibi. Lanjut lihat preview 3D figure!
         </p>
       </div>
 
-      {result?.thumbnailUrl && (
-        <div className="relative w-48 h-48 rounded-2xl overflow-hidden border-4 border-brand-200 shadow-lg bg-white">
+      {chibiImageUrl && (
+        <div className="relative w-64 h-64 rounded-2xl overflow-hidden border-4 border-brand-200 shadow-lg bg-white">
           <Image
-            src={result.thumbnailUrl}
-            alt="Preview model 3D kamu"
+            src={chibiImageUrl}
+            alt="Hasil konversi chibi dari foto kamu"
             fill
             className="object-contain"
             unoptimized
@@ -254,17 +256,28 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
 
       <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-4 py-2 text-sm text-brand-700">
         <span>✨</span>
-        <span>Powered by TRELLIS AI — model 3D berkualitas tinggi</span>
+        <span>Powered by fal.ai Cartoonify</span>
       </div>
 
-      <Button
-        variant="primary"
-        onClick={() => result?.glbUrl && onConversionComplete(result.glbUrl)}
-        className="w-full max-w-xs"
-        aria-label="Lanjut ke preview 3D interaktif"
-      >
-        Lihat Preview 3D →
-      </Button>
+      <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
+        <Button
+          variant="secondary"
+          onClick={handleDownload}
+          className="flex items-center justify-center gap-2 flex-1"
+          aria-label="Download gambar chibi"
+        >
+          <Download className="w-4 h-4" />
+          Download
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() => chibiImageUrl && onConversionComplete(chibiImageUrl)}
+          className="flex-1"
+          aria-label="Lanjut ke preview 3D"
+        >
+          Lanjut ke 3D →
+        </Button>
+      </div>
     </div>
   );
 };

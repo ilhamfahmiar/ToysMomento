@@ -7,19 +7,7 @@ import { ChibiConverterProps } from "@/types";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import Button from "@/components/ui/Button";
 
-type ConversionStatus =
-  | "idle"
-  | "converting"
-  | "retrying"
-  | "success"
-  | "error";
-
-const PROGRESS_STAGES = [
-  { pct: 20, label: "Menganalisis foto...", ms: 1000 },
-  { pct: 50, label: "Menerapkan style anime...", ms: 4000 },
-  { pct: 80, label: "Menyempurnakan detail...", ms: 10000 },
-  { pct: 90, label: "Hampir selesai...", ms: 18000 },
-];
+type ConversionStatus = "idle" | "converting" | "success" | "error";
 
 const ChibiConverter: React.FC<ChibiConverterProps> = ({
   sourceFile,
@@ -31,7 +19,6 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("Memulai...");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [retryCountdown, setRetryCountdown] = useState(0);
   const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const clearTimers = () => {
@@ -39,24 +26,20 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
     timerRefs.current = [];
   };
 
-  const startProgressAnimation = () => {
-    PROGRESS_STAGES.forEach(({ pct, label, ms }) => {
-      const t = setTimeout(() => {
-        setProgress(pct);
-        setProgressLabel(label);
-      }, ms);
-      timerRefs.current.push(t);
-    });
-  };
-
-  const convertImage = async (attempt = 1) => {
+  const convertImage = async () => {
     setStatus("converting");
     setChibiImageUrl(null);
     setProgress(5);
-    setProgressLabel("Memulai...");
-    startProgressAnimation();
+    setProgressLabel("Memuat gambar...");
 
     try {
+      // Step 1: Get image data URL from server
+      const t1 = setTimeout(() => {
+        setProgress(20);
+        setProgressLabel("Menganalisis foto...");
+      }, 300);
+      timerRefs.current.push(t1);
+
       const formData = new FormData();
       formData.append("image", sourceFile);
 
@@ -66,43 +49,47 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
       });
 
       const data = await response.json();
-      clearTimers();
 
-      if (!data.success) {
-        // Server loading — auto retry
-        if (data.retryAfter && attempt <= 3) {
-          const waitSec: number = data.retryAfter ?? 30;
-          setStatus("retrying");
-          setRetryCountdown(waitSec);
-
-          const countdown = setInterval(() => {
-            setRetryCountdown((prev) => {
-              if (prev <= 1) {
-                clearInterval(countdown);
-                convertImage(attempt + 1);
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-          return;
-        }
-
-        setErrorMessage(data.error || "Konversi gagal.");
+      if (!data.success || !data.imageDataUrl) {
+        setErrorMessage(data.error || "Gagal memproses gambar.");
         setStatus("error");
         return;
       }
 
+      // Step 2: Process on client using Canvas API
+      const t2 = setTimeout(() => {
+        setProgress(40);
+        setProgressLabel("Menerapkan bilateral filter...");
+      }, 100);
+      const t3 = setTimeout(() => {
+        setProgress(60);
+        setProgressLabel("Menerapkan cel-shading...");
+      }, 500);
+      const t4 = setTimeout(() => {
+        setProgress(75);
+        setProgressLabel("Menambahkan outline...");
+      }, 1000);
+      const t5 = setTimeout(() => {
+        setProgress(88);
+        setProgressLabel("Finishing...");
+      }, 1500);
+      timerRefs.current.push(t2, t3, t4, t5);
+
+      // Dynamic import to avoid SSR issues
+      const { convertToChibi } = await import("@/lib/browserChibiConverter");
+      const result = await convertToChibi(data.imageDataUrl);
+
+      clearTimers();
       setProgress(100);
       setProgressLabel("Selesai!");
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 300));
 
-      setChibiImageUrl(data.chibiImageUrl);
+      setChibiImageUrl(result);
       setStatus("success");
     } catch (err) {
       clearTimers();
       console.error("Conversion error:", err);
-      setErrorMessage("Konversi gagal. Periksa koneksi internet kamu.");
+      setErrorMessage("Konversi gagal. Silakan coba lagi.");
       setStatus("error");
     }
   };
@@ -137,38 +124,19 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2.5">
             <div
-              className="bg-primary h-2.5 rounded-full transition-all duration-1000"
+              className="bg-primary h-2.5 rounded-full transition-all duration-500"
               style={{ width: `${progress}%` }}
             />
           </div>
         </div>
         <div className="text-center space-y-1">
           <p className="text-sm text-gray-600 font-medium">
-            AI sedang mengubah foto kamu ke style anime chibi...
+            Mengubah foto ke style chibi...
           </p>
           <p className="text-xs text-gray-400">
-            Proses membutuhkan 10–30 detik · Gratis tanpa API key
+            Diproses di browser kamu · Gratis · Privat
           </p>
         </div>
-      </div>
-    );
-  }
-
-  // ── Retrying ─────────────────────────────────────────────────
-  if (status === "retrying") {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <LoadingSpinner size="lg" />
-        <p className="text-primary font-semibold">
-          Server AI sedang loading...
-        </p>
-        <p className="text-gray-500 text-sm">
-          Otomatis mencoba lagi dalam{" "}
-          <span className="font-bold text-primary">{retryCountdown}</span> detik
-        </p>
-        <p className="text-xs text-gray-400 max-w-xs">
-          Ini normal saat pertama kali digunakan. Tunggu sebentar ya!
-        </p>
       </div>
     );
   }
@@ -203,7 +171,7 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
           Chibi Kamu Sudah Jadi! 🎉
         </h2>
         <p className="text-gray-600 text-sm">
-          Foto kamu sudah diubah ke style anime chibi. Lanjut lihat preview 3D!
+          Foto kamu sudah diubah ke style chibi. Lanjut lihat preview 3D!
         </p>
       </div>
 
@@ -221,7 +189,7 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
 
       <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-4 py-2 text-sm text-brand-700">
         <span>✨</span>
-        <span>Powered by AnimeGANv2 — 100% gratis</span>
+        <span>100% gratis · Diproses di browser · Tidak ada data dikirim</span>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">

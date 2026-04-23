@@ -164,44 +164,43 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
         <div className="text-5xl">🔑</div>
         <div>
           <h3 className="text-lg font-bold text-gray-800 mb-1">
-            Hugging Face Token Diperlukan
+            ModelsLab API Key Diperlukan
           </h3>
           <p className="text-gray-500 text-sm max-w-sm">
-            Daftar gratis di Hugging Face untuk mengaktifkan fitur konversi
-            chibi.
+            Daftar gratis di ModelsLab — tidak perlu kartu kredit.
           </p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-left w-full max-w-sm">
           <p className="text-sm font-semibold text-gray-700 mb-2">
-            Setup (5 menit, gratis):
+            Setup (3 menit, gratis):
           </p>
           <ol className="text-sm text-gray-600 space-y-1.5 list-decimal list-inside">
             <li>
               Daftar di{" "}
               <a
-                href="https://huggingface.co/join"
+                href="https://modelslab.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline"
               >
-                huggingface.co/join
+                modelslab.com
               </a>{" "}
-              (bisa pakai Google/GitHub)
+              (bisa pakai Google)
             </li>
             <li>
               Buka{" "}
               <a
-                href="https://huggingface.co/settings/tokens"
+                href="https://modelslab.com/dashboard"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline"
               >
-                huggingface.co/settings/tokens
+                Dashboard → Settings → API Key
               </a>
             </li>
-            <li>Klik &quot;New token&quot; → pilih role &quot;Read&quot;</li>
+            <li>Copy API key kamu</li>
             <li>
-              Copy token, buka file{" "}
+              Buka file{" "}
               <code className="bg-gray-200 px-1 rounded text-xs">
                 .env.local
               </code>
@@ -209,9 +208,9 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
             <li>
               Ganti{" "}
               <code className="bg-gray-200 px-1 rounded text-xs">
-                your_hf_token_here
+                your_modelslab_key_here
               </code>{" "}
-              dengan token kamu
+              dengan key kamu
             </li>
             <li>Restart dev server</li>
           </ol>

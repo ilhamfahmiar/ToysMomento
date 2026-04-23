@@ -1,77 +1,108 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const MODELSLAB_API_KEY = process.env.MODELSLAB_API_KEY;
+const MESHY_API_KEY = process.env.MESHY_API_KEY;
+const MESHY_API_BASE = "https://api.meshy.ai/openapi/v1";
 
 /**
- * ModelsLab (stablediffusionapi.com) — img2img endpoint
- * Endpoint: https://modelslab.com/api/v6/realtime/img2img
+ * Meshy AI — Image to 3D API
+ * Teknologi yang sama dipakai MakerWorld PrintU (Meshy-6)
  *
- * Free API key — no credit card required
- * Daftar di: https://modelslab.com
- * API key di: https://modelslab.com/dashboard (Settings → API Key)
+ * Pipeline:
+ * 1. Upload foto → POST /image-to-3d → dapat task ID
+ * 2. Poll task status hingga SUCCEEDED
+ * 3. Return GLB URL untuk di-render di Three.js
  *
- * Model chibi/anime yang digunakan: anime-model-v2
+ * Daftar & API key: https://app.meshy.ai/api
+ * Free tier: 200 credits/bulan (~20 model 3D gratis)
  */
 
-const MODELSLAB_ENDPOINT = "https://modelslab.com/api/v6/realtime/img2img";
-
-const CHIBI_PROMPT =
-  "nendoroid chibi style, big round head, small cute body, large round eyes, smooth face, gentle smile, detailed clothing, matte plastic finish, white background, full body, anime style, high quality";
-
-const NEGATIVE_PROMPT =
-  "realistic, photograph, ugly, deformed, blurry, bad anatomy, extra limbs, elongated body, thin body";
-
 const POLL_INTERVAL_MS = 3000;
-const TIMEOUT_MS = 120000;
+const TIMEOUT_MS = 180000; // 3 menit
 
-interface ModelsLabResponse {
-  status: "success" | "processing" | "error";
-  output?: string[];
-  future_links?: string[];
-  fetch_result?: string;
-  id?: number;
-  message?: string;
-  error?: string;
-  messege?: string; // typo in their API
+interface MeshyTask {
+  id: string;
+  status: "PENDING" | "IN_PROGRESS" | "SUCCEEDED" | "FAILED" | "EXPIRED";
+  progress?: number;
+  model_urls?: {
+    glb?: string;
+    obj?: string;
+    fbx?: string;
+    usdz?: string;
+  };
+  thumbnail_url?: string;
+  error?: { message: string };
 }
 
-async function fetchResult(fetchUrl: string): Promise<string> {
+async function createImageTo3DTask(imageDataUrl: string): Promise<string> {
+  const response = await fetch(`${MESHY_API_BASE}/image-to-3d`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${MESHY_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      image_url: imageDataUrl,
+      ai_model: "meshy-6",
+      model_type: "standard",
+      should_texture: true,
+      should_remesh: false,
+      image_enhancement: true,
+      remove_lighting: true,
+      target_formats: ["glb"],
+      symmetry_mode: "auto",
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Meshy API error ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json();
+  return data.result as string; // task ID
+}
+
+async function pollTask(taskId: string): Promise<MeshyTask> {
   const startTime = Date.now();
 
   while (Date.now() - startTime < TIMEOUT_MS) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-
-    const response = await fetch(fetchUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: MODELSLAB_API_KEY }),
+    const response = await fetch(`${MESHY_API_BASE}/image-to-3d/${taskId}`, {
+      headers: {
+        Authorization: `Bearer ${MESHY_API_KEY}`,
+      },
     });
 
-    if (!response.ok) continue;
-
-    const data = (await response.json()) as ModelsLabResponse;
-
-    if (data.status === "success" && data.output && data.output.length > 0) {
-      return data.output[0];
+    if (!response.ok) {
+      throw new Error(`Poll error: ${response.status}`);
     }
 
-    if (data.status === "error") {
-      throw new Error(data.message || data.error || "Processing failed");
+    const task = (await response.json()) as MeshyTask;
+
+    if (task.status === "SUCCEEDED") {
+      return task;
     }
-    // status === "processing" — keep polling
+
+    if (task.status === "FAILED" || task.status === "EXPIRED") {
+      throw new Error(
+        `Task ${task.status}: ${task.error?.message ?? "unknown error"}`,
+      );
+    }
+
+    // PENDING or IN_PROGRESS — wait and poll again
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 
-  throw new Error("Timeout: proses terlalu lama");
+  throw new Error("Timeout: proses terlalu lama (>3 menit)");
 }
 
 export async function POST(request: NextRequest) {
   try {
     // Cek API key
-    if (!MODELSLAB_API_KEY || MODELSLAB_API_KEY === "your_modelslab_key_here") {
+    if (!MESHY_API_KEY || MESHY_API_KEY === "your_meshy_key_here") {
       return NextResponse.json(
         {
           success: false,
-          error: "MODELSLAB_API_KEY belum dikonfigurasi.",
+          error: "MESHY_API_KEY belum dikonfigurasi.",
           needsToken: true,
         },
         { status: 503 },
@@ -96,76 +127,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert image to base64 data URL
+    // Convert to base64 data URL
     const imageBuffer = await imageFile.arrayBuffer();
     const imageBase64 = Buffer.from(imageBuffer).toString("base64");
     const mimeType = imageFile.type || "image/jpeg";
     const imageDataUrl = `data:${mimeType};base64,${imageBase64}`;
 
-    // Call ModelsLab img2img API
-    const response = await fetch(MODELSLAB_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key: MODELSLAB_API_KEY,
-        prompt: CHIBI_PROMPT,
-        negative_prompt: NEGATIVE_PROMPT,
-        init_image: imageDataUrl,
-        width: 512,
-        height: 512,
-        samples: 1,
-        strength: 0.7, // how much to transform (0=keep original, 1=full transform)
-        seed: null,
-        base64: false,
-        webhook: null,
-        track_id: null,
-        safety_checker: false,
-        instant_response: false,
-      }),
-    });
+    // Create Meshy task
+    const taskId = await createImageTo3DTask(imageDataUrl);
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(
-        "[convert-chibi] ModelsLab error:",
-        response.status,
-        errText,
-      );
-      return NextResponse.json(
-        { success: false, error: "Konversi gagal. Silakan coba lagi." },
-        { status: 500 },
-      );
+    // Poll until done
+    const task = await pollTask(taskId);
+
+    const glbUrl = task.model_urls?.glb;
+    if (!glbUrl) {
+      throw new Error("GLB URL tidak tersedia dari hasil task");
     }
 
-    const data = (await response.json()) as ModelsLabResponse;
-
-    // Immediate success
-    if (data.status === "success" && data.output && data.output.length > 0) {
-      return NextResponse.json(
-        { success: true, chibiImageUrl: data.output[0] },
-        { status: 200 },
-      );
-    }
-
-    // Processing — poll fetch_result URL
-    if (
-      (data.status === "processing" || data.future_links) &&
-      data.fetch_result
-    ) {
-      const chibiImageUrl = await fetchResult(data.fetch_result);
-      return NextResponse.json(
-        { success: true, chibiImageUrl },
-        { status: 200 },
-      );
-    }
-
-    // Error from API
-    const errMsg =
-      data.message || data.error || data.messege || "Konversi gagal.";
-    console.error("[convert-chibi] ModelsLab response error:", errMsg);
     return NextResponse.json(
-      { success: false, error: "Konversi gagal. Silakan coba lagi." },
-      { status: 500 },
+      {
+        success: true,
+        glbUrl,
+        thumbnailUrl: task.thumbnail_url,
+        taskId,
+      },
+      { status: 200 },
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

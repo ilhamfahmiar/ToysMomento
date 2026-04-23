@@ -1,36 +1,82 @@
 "use client";
 
-import React, { Suspense, useRef, useState, useEffect } from "react";
+/**
+ * ThreeDScene — React Three Fiber scene untuk visualisasi model 3D dari Meshy AI.
+ *
+ * Menerima GLB URL dari Meshy API dan me-render model 3D interaktif.
+ * Di-import secara dynamic (ssr: false) dari ThreeDVisualizer.tsx.
+ */
+
+import React, { Suspense, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Html, useGLTF } from "@react-three/drei";
+import {
+  OrbitControls,
+  Html,
+  useGLTF,
+  Environment,
+  Center,
+} from "@react-three/drei";
 import * as THREE from "three";
 
 // ============================================================
-// Nendoroid Fallback Figure (Three.js Primitives)
+// Meshy 3D Model Viewer
 // ============================================================
 
-interface FallbackFigureProps {
-  chibiImageUrl: string;
+interface MeshyModelProps {
+  glbUrl: string;
 }
 
-function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
+function MeshyModel({ glbUrl }: MeshyModelProps) {
+  const { scene } = useGLTF(glbUrl);
   const groupRef = useRef<THREE.Group>(null);
-  const [chibiTexture, setChibiTexture] = useState<THREE.Texture | null>(null);
 
-  useEffect(() => {
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      chibiImageUrl,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        setChibiTexture(texture);
-      },
-      undefined,
-      (err) => {
-        console.warn("Failed to load chibi texture:", err);
-      },
-    );
-  }, [chibiImageUrl]);
+  // Subtle idle rotation
+  useFrame((state) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y =
+        Math.sin(state.clock.elapsedTime * 0.3) * 0.2;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <Center>
+        <primitive object={scene} />
+      </Center>
+      {/* 100cm label */}
+      <Html
+        position={[0.8, 1.5, 0]}
+        center={false}
+        distanceFactor={4}
+        style={{ pointerEvents: "none" }}
+      >
+        <div
+          style={{
+            background: "rgba(255,255,255,0.92)",
+            border: "1.5px solid #15803d",
+            borderRadius: "6px",
+            padding: "2px 8px",
+            fontSize: "11px",
+            fontWeight: 700,
+            color: "#15803d",
+            whiteSpace: "nowrap",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+            userSelect: "none",
+          }}
+        >
+          100cm
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+// ============================================================
+// Fallback Nendoroid Primitives (jika GLB gagal load)
+// ============================================================
+
+function FallbackFigure() {
+  const groupRef = useRef<THREE.Group>(null);
 
   useFrame((state) => {
     if (groupRef.current) {
@@ -48,67 +94,47 @@ function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
   const armRadius = 0.08;
   const footRadius = 0.13;
 
-  const matteGray = new THREE.MeshStandardMaterial({
-    color: "#e8e0d8",
+  const matteGreen = new THREE.MeshStandardMaterial({
+    color: "#15803d",
     roughness: 0.85,
-    metalness: 0.0,
   });
-
   const matteDark = new THREE.MeshStandardMaterial({
-    color: "#5a4a3a",
+    color: "#1c1917",
     roughness: 0.9,
-    metalness: 0.0,
   });
-
-  const headMaterial = chibiTexture
-    ? new THREE.MeshStandardMaterial({
-        map: chibiTexture,
-        roughness: 0.8,
-        metalness: 0.0,
-      })
-    : new THREE.MeshStandardMaterial({
-        color: "#f5d5b0",
-        roughness: 0.8,
-        metalness: 0.0,
-      });
+  const matteSkin = new THREE.MeshStandardMaterial({
+    color: "#fde68a",
+    roughness: 0.8,
+  });
 
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
-      {/* HEAD */}
       <mesh position={[0, bodyHeight / 2 + headRadius * 0.85, 0]} castShadow>
         <sphereGeometry args={[headRadius, 32, 32]} />
-        <primitive object={headMaterial} attach="material" />
+        <primitive object={matteSkin} attach="material" />
       </mesh>
-
-      {/* BODY */}
       <mesh position={[0, 0, 0]} castShadow>
         <cylinderGeometry
           args={[bodyRadius * 0.9, bodyRadius, bodyHeight, 16]}
         />
-        <primitive object={matteGray} attach="material" />
+        <primitive object={matteGreen} attach="material" />
       </mesh>
-
-      {/* LEFT ARM */}
       <mesh
         position={[-(bodyRadius + armRadius + 0.04), bodyHeight * 0.2, 0]}
         rotation={[0, 0, Math.PI / 8]}
         castShadow
       >
         <cylinderGeometry args={[armRadius * 0.8, armRadius, armHeight, 12]} />
-        <primitive object={matteGray} attach="material" />
+        <primitive object={matteSkin} attach="material" />
       </mesh>
-
-      {/* RIGHT ARM */}
       <mesh
         position={[bodyRadius + armRadius + 0.04, bodyHeight * 0.2, 0]}
         rotation={[0, 0, -Math.PI / 8]}
         castShadow
       >
         <cylinderGeometry args={[armRadius * 0.8, armRadius, armHeight, 12]} />
-        <primitive object={matteGray} attach="material" />
+        <primitive object={matteSkin} attach="material" />
       </mesh>
-
-      {/* LEFT LEG */}
       <mesh
         position={[-bodyRadius * 0.5, -(bodyHeight / 2 + legHeight / 2), 0]}
         castShadow
@@ -116,8 +142,6 @@ function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
         <cylinderGeometry args={[legRadius, legRadius * 1.1, legHeight, 12]} />
         <primitive object={matteDark} attach="material" />
       </mesh>
-
-      {/* RIGHT LEG */}
       <mesh
         position={[bodyRadius * 0.5, -(bodyHeight / 2 + legHeight / 2), 0]}
         castShadow
@@ -125,8 +149,6 @@ function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
         <cylinderGeometry args={[legRadius, legRadius * 1.1, legHeight, 12]} />
         <primitive object={matteDark} attach="material" />
       </mesh>
-
-      {/* LEFT FOOT */}
       <mesh
         position={[
           -bodyRadius * 0.5,
@@ -138,8 +160,6 @@ function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
         <sphereGeometry args={[footRadius, 12, 8]} />
         <primitive object={matteDark} attach="material" />
       </mesh>
-
-      {/* RIGHT FOOT */}
       <mesh
         position={[
           bodyRadius * 0.5,
@@ -151,8 +171,6 @@ function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
         <sphereGeometry args={[footRadius, 12, 8]} />
         <primitive object={matteDark} attach="material" />
       </mesh>
-
-      {/* 100cm LABEL */}
       <Html
         position={[headRadius + 0.15, bodyHeight / 2 + headRadius * 1.6, 0]}
         center={false}
@@ -162,14 +180,13 @@ function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
         <div
           style={{
             background: "rgba(255,255,255,0.92)",
-            border: "1.5px solid #1a6b3c",
+            border: "1.5px solid #15803d",
             borderRadius: "6px",
             padding: "2px 8px",
             fontSize: "11px",
             fontWeight: 700,
-            color: "#1a6b3c",
+            color: "#15803d",
             whiteSpace: "nowrap",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
             userSelect: "none",
           }}
         >
@@ -181,143 +198,62 @@ function FallbackFigure({ chibiImageUrl }: FallbackFigureProps) {
 }
 
 // ============================================================
-// GLTF Figure (loads actual model if available)
-// ============================================================
-
-interface GLTFFigureProps {
-  chibiImageUrl: string;
-}
-
-function GLTFFigure({ chibiImageUrl }: GLTFFigureProps) {
-  const { scene } = useGLTF("/models/nendoroid-template.glb");
-  const [chibiTexture, setChibiTexture] = useState<THREE.Texture | null>(null);
-
-  useEffect(() => {
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      chibiImageUrl,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        setChibiTexture(texture);
-      },
-      undefined,
-      (err) => {
-        console.warn("Failed to load chibi texture for GLTF:", err);
-      },
-    );
-  }, [chibiImageUrl]);
-
-  useEffect(() => {
-    if (!chibiTexture) return;
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        const nameLower = child.name.toLowerCase();
-        if (nameLower.includes("head") || nameLower.includes("face")) {
-          if (Array.isArray(child.material)) {
-            child.material.forEach((mat) => {
-              if (mat instanceof THREE.MeshStandardMaterial) {
-                mat.map = chibiTexture;
-                mat.needsUpdate = true;
-              }
-            });
-          } else if (child.material instanceof THREE.MeshStandardMaterial) {
-            child.material.map = chibiTexture;
-            child.material.needsUpdate = true;
-          }
-        }
-      }
-    });
-  }, [scene, chibiTexture]);
-
-  return (
-    <>
-      <primitive object={scene} />
-      <Html
-        position={[0.6, 1.8, 0]}
-        center={false}
-        distanceFactor={4}
-        style={{ pointerEvents: "none" }}
-      >
-        <div
-          style={{
-            background: "rgba(255,255,255,0.92)",
-            border: "1.5px solid #1a6b3c",
-            borderRadius: "6px",
-            padding: "2px 8px",
-            fontSize: "11px",
-            fontWeight: 700,
-            color: "#1a6b3c",
-            whiteSpace: "nowrap",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-            userSelect: "none",
-          }}
-        >
-          100cm
-        </div>
-      </Html>
-    </>
-  );
-}
-
-// ============================================================
 // Scene Content
 // ============================================================
 
 interface SceneContentProps {
-  chibiImageUrl: string;
+  glbUrl?: string;
 }
 
-function SceneContent({ chibiImageUrl }: SceneContentProps) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [useGLTFModel, setUseGLTFModel] = useState(false);
-
+function SceneContent({ glbUrl }: SceneContentProps) {
   return (
     <>
-      <ambientLight intensity={0.6} />
-      <directionalLight
-        position={[3, 5, 3]}
-        intensity={1.0}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
+      <ambientLight intensity={0.7} />
+      <directionalLight position={[3, 5, 3]} intensity={1.0} castShadow />
       <directionalLight position={[-2, 3, -2]} intensity={0.3} />
+      <Environment preset="studio" />
 
-      {useGLTFModel ? (
-        <Suspense fallback={<FallbackFigure chibiImageUrl={chibiImageUrl} />}>
-          <GLTFFigure chibiImageUrl={chibiImageUrl} />
+      {glbUrl ? (
+        <Suspense fallback={<FallbackFigure />}>
+          <MeshyModel glbUrl={glbUrl} />
         </Suspense>
       ) : (
-        <FallbackFigure chibiImageUrl={chibiImageUrl} />
+        <FallbackFigure />
       )}
 
-      {/* Platform / Base */}
-      <mesh position={[0, -1.05, 0]} receiveShadow>
-        <cylinderGeometry args={[0.7, 0.8, 0.08, 32]} />
-        <meshStandardMaterial color="#d4c5b5" roughness={0.9} metalness={0.0} />
+      {/* Platform */}
+      <mesh position={[0, -1.2, 0]} receiveShadow>
+        <cylinderGeometry args={[0.8, 0.9, 0.08, 32]} />
+        <meshStandardMaterial color="#d4c5b5" roughness={0.9} />
       </mesh>
 
       <OrbitControls
         enablePan={false}
-        minDistance={3}
+        minDistance={2}
         maxDistance={8}
         minPolarAngle={Math.PI / 6}
         maxPolarAngle={Math.PI / 1.8}
         target={[0, 0, 0]}
+        autoRotate
+        autoRotateSpeed={0.5}
       />
     </>
   );
 }
 
 // ============================================================
-// ThreeDScene — exported default (dynamically imported)
+// ThreeDScene — exported default
 // ============================================================
 
 interface ThreeDSceneProps {
-  chibiImageUrl: string;
+  chibiImageUrl: string; // now used as GLB URL from Meshy
 }
 
 export default function ThreeDScene({ chibiImageUrl }: ThreeDSceneProps) {
+  // chibiImageUrl is now the GLB URL from Meshy API
+  const isGlbUrl =
+    chibiImageUrl?.includes(".glb") || chibiImageUrl?.includes("meshy");
+
   return (
     <Canvas
       camera={{ position: [0, 0.5, 5], fov: 45 }}
@@ -325,7 +261,7 @@ export default function ThreeDScene({ chibiImageUrl }: ThreeDSceneProps) {
       style={{ width: "100%", height: "100%" }}
       gl={{ antialias: true, alpha: true }}
     >
-      <SceneContent chibiImageUrl={chibiImageUrl} />
+      <SceneContent glbUrl={isGlbUrl ? chibiImageUrl : undefined} />
     </Canvas>
   );
 }

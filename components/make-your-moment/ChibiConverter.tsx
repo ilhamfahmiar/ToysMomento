@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import Image from "next/image";
-import { Download } from "lucide-react";
 import { ChibiConverterProps } from "@/types";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import Button from "@/components/ui/Button";
@@ -10,21 +9,30 @@ import Button from "@/components/ui/Button";
 type ConversionStatus =
   | "idle"
   | "converting"
-  | "retrying"
   | "success"
   | "error"
   | "no_token";
 
-const ChibiConverter: React.FC<ChibiConverterProps> = ({
+interface ConversionResult {
+  glbUrl: string;
+  thumbnailUrl?: string;
+}
+
+// Extend props to pass GLB URL to parent
+interface ExtendedChibiConverterProps extends ChibiConverterProps {
+  onConversionComplete: (glbUrl: string) => void;
+}
+
+const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
   sourceFile,
   onConversionComplete,
   onConversionError,
 }) => {
   const [status, setStatus] = useState<ConversionStatus>("idle");
-  const [chibiImageUrl, setChibiImageUrl] = useState<string | null>(null);
+  const [result, setResult] = useState<ConversionResult | null>(null);
   const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState("Memulai...");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [retryCountdown, setRetryCountdown] = useState(0);
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopProgress = () => {
@@ -34,14 +42,28 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
     }
   };
 
-  const convertImage = async (attempt = 1) => {
+  const convertImage = async () => {
     setStatus("converting");
-    setChibiImageUrl(null);
+    setResult(null);
     setProgress(0);
 
+    // Simulate progress stages
+    const stages = [
+      { pct: 15, label: "Menganalisis foto...", delay: 2000 },
+      { pct: 35, label: "Membuat model 3D...", delay: 8000 },
+      { pct: 60, label: "Menambahkan tekstur...", delay: 15000 },
+      { pct: 80, label: "Finishing model...", delay: 25000 },
+      { pct: 90, label: "Hampir selesai...", delay: 40000 },
+    ];
+
+    let stageIdx = 0;
     progressRef.current = setInterval(() => {
-      setProgress((prev) => Math.min(prev + 2, 88));
-    }, 600);
+      if (stageIdx < stages.length) {
+        setProgress(stages[stageIdx].pct);
+        setProgressLabel(stages[stageIdx].label);
+        stageIdx++;
+      }
+    }, 8000);
 
     try {
       const formData = new FormData();
@@ -56,39 +78,20 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
       stopProgress();
 
       if (!data.success) {
-        // Model loading — auto retry after countdown
-        if (data.retryAfter && attempt <= 3) {
-          const waitSec: number = data.retryAfter ?? 20;
-          setStatus("retrying");
-          setRetryCountdown(waitSec);
-
-          const countdown = setInterval(() => {
-            setRetryCountdown((prev) => {
-              if (prev <= 1) {
-                clearInterval(countdown);
-                convertImage(attempt + 1);
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-          return;
-        }
-
-        // Token not configured
         if (data.needsToken) {
           setStatus("no_token");
           return;
         }
-
         setErrorMessage(data.error || "Konversi gagal.");
         setStatus("error");
         return;
       }
 
       setProgress(100);
-      await new Promise((r) => setTimeout(r, 400));
-      setChibiImageUrl(data.chibiImageUrl);
+      setProgressLabel("Selesai!");
+      await new Promise((r) => setTimeout(r, 500));
+
+      setResult({ glbUrl: data.glbUrl, thumbnailUrl: data.thumbnailUrl });
       setStatus("success");
     } catch (err) {
       stopProgress();
@@ -104,16 +107,6 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleDownload = () => {
-    if (!chibiImageUrl) return;
-    const link = document.createElement("a");
-    link.href = chibiImageUrl;
-    link.download = "chibi-toysmomento.png";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const handleRetry = () => onConversionError();
 
   // ── Converting ──────────────────────────────────────────────
@@ -123,36 +116,24 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
         <LoadingSpinner size="lg" />
         <div className="w-full max-w-xs">
           <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>Membuat chibi anime style...</span>
+            <span>{progressLabel}</span>
             <span>{progress}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
             <div
-              className="bg-primary h-2 rounded-full transition-all duration-300"
+              className="bg-primary h-2.5 rounded-full transition-all duration-1000"
               style={{ width: `${progress}%` }}
             />
           </div>
         </div>
-        <p className="text-xs text-gray-400 text-center">
-          Proses AI membutuhkan 20–60 detik
-        </p>
-      </div>
-    );
-  }
-
-  // ── Retrying (model loading) ─────────────────────────────────
-  if (status === "retrying") {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <LoadingSpinner size="lg" />
-        <p className="text-primary font-semibold">Model AI sedang loading...</p>
-        <p className="text-gray-500 text-sm">
-          Otomatis mencoba lagi dalam{" "}
-          <span className="font-bold text-primary">{retryCountdown}</span> detik
-        </p>
-        <p className="text-xs text-gray-400 max-w-xs">
-          Ini normal saat model pertama kali digunakan. Tunggu sebentar ya!
-        </p>
+        <div className="text-center space-y-1">
+          <p className="text-sm text-gray-600 font-medium">
+            Meshy AI sedang membuat model 3D kamu
+          </p>
+          <p className="text-xs text-gray-400">
+            Proses membutuhkan 1–3 menit — sama seperti MakerWorld PrintU
+          </p>
+        </div>
       </div>
     );
   }
@@ -164,10 +145,11 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
         <div className="text-5xl">🔑</div>
         <div>
           <h3 className="text-lg font-bold text-gray-800 mb-1">
-            ModelsLab API Key Diperlukan
+            Meshy AI API Key Diperlukan
           </h3>
           <p className="text-gray-500 text-sm max-w-sm">
-            Daftar gratis di ModelsLab — tidak perlu kartu kredit.
+            Meshy AI adalah teknologi yang sama dipakai MakerWorld PrintU. Free
+            tier: 200 credits/bulan (~20 model 3D gratis).
           </p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-left w-full max-w-sm">
@@ -178,25 +160,26 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
             <li>
               Daftar di{" "}
               <a
-                href="https://modelslab.com"
+                href="https://app.meshy.ai"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline"
               >
-                modelslab.com
+                app.meshy.ai
               </a>{" "}
               (bisa pakai Google)
             </li>
             <li>
               Buka{" "}
               <a
-                href="https://modelslab.com/dashboard"
+                href="https://app.meshy.ai/api"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline"
               >
-                Dashboard → Settings → API Key
-              </a>
+                app.meshy.ai/api
+              </a>{" "}
+              → Generate API Key
             </li>
             <li>Copy API key kamu</li>
             <li>
@@ -208,7 +191,7 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
             <li>
               Ganti{" "}
               <code className="bg-gray-200 px-1 rounded text-xs">
-                your_modelslab_key_here
+                your_meshy_key_here
               </code>{" "}
               dengan key kamu
             </li>
@@ -250,21 +233,22 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
 
   // ── Success ──────────────────────────────────────────────────
   return (
-    <div className="flex flex-col items-center gap-8 py-8">
+    <div className="flex flex-col items-center gap-6 py-8">
       <div className="text-center">
         <h2 className="text-2xl font-display font-bold text-primary mb-2">
-          Chibi Kamu Sudah Jadi! 🎉
+          Model 3D Kamu Sudah Jadi! 🎉
         </h2>
         <p className="text-gray-600 text-sm">
-          Lanjut lihat visualisasi 3D figure kamu!
+          Model 3D chibi kamu siap. Lanjut lihat preview interaktif!
         </p>
       </div>
 
-      {chibiImageUrl && (
-        <div className="relative w-64 h-64 rounded-2xl overflow-hidden border-4 border-brand-200 shadow-lg bg-white">
+      {/* Thumbnail preview */}
+      {result?.thumbnailUrl && (
+        <div className="relative w-48 h-48 rounded-2xl overflow-hidden border-4 border-brand-200 shadow-lg bg-white">
           <Image
-            src={chibiImageUrl}
-            alt="Hasil konversi chibi dari foto kamu"
+            src={result.thumbnailUrl}
+            alt="Preview model 3D chibi kamu"
             fill
             className="object-contain"
             unoptimized
@@ -272,25 +256,19 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
-        <Button
-          variant="secondary"
-          onClick={handleDownload}
-          className="flex items-center justify-center gap-2 flex-1"
-          aria-label="Download gambar chibi"
-        >
-          <Download className="w-4 h-4" />
-          Download
-        </Button>
-        <Button
-          variant="primary"
-          onClick={() => chibiImageUrl && onConversionComplete(chibiImageUrl)}
-          className="flex-1"
-          aria-label="Lanjut ke visualisasi 3D"
-        >
-          Lanjut ke 3D →
-        </Button>
+      <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-4 py-2 text-sm text-brand-700">
+        <span>✨</span>
+        <span>Powered by Meshy AI — teknologi yang sama dengan MakerWorld</span>
       </div>
+
+      <Button
+        variant="primary"
+        onClick={() => result?.glbUrl && onConversionComplete(result.glbUrl)}
+        className="w-full max-w-xs"
+        aria-label="Lanjut ke preview 3D interaktif"
+      >
+        Lihat Preview 3D →
+      </Button>
     </div>
   );
 };

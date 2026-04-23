@@ -10,15 +10,15 @@ import Button from "@/components/ui/Button";
 type ConversionStatus =
   | "idle"
   | "converting"
+  | "retrying"
   | "success"
-  | "error"
-  | "no_token";
+  | "error";
 
 const PROGRESS_STAGES = [
-  { pct: 15, label: "Menganalisis foto...", ms: 1500 },
-  { pct: 40, label: "Menerapkan style chibi...", ms: 5000 },
-  { pct: 70, label: "Menyempurnakan detail...", ms: 10000 },
-  { pct: 88, label: "Hampir selesai...", ms: 18000 },
+  { pct: 20, label: "Menganalisis foto...", ms: 1000 },
+  { pct: 50, label: "Menerapkan style anime...", ms: 4000 },
+  { pct: 80, label: "Menyempurnakan detail...", ms: 10000 },
+  { pct: 90, label: "Hampir selesai...", ms: 18000 },
 ];
 
 const ChibiConverter: React.FC<ChibiConverterProps> = ({
@@ -31,6 +31,7 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("Memulai...");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [retryCountdown, setRetryCountdown] = useState(0);
   const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const clearTimers = () => {
@@ -48,7 +49,7 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
     });
   };
 
-  const convertImage = async () => {
+  const convertImage = async (attempt = 1) => {
     setStatus("converting");
     setChibiImageUrl(null);
     setProgress(5);
@@ -68,10 +69,25 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
       clearTimers();
 
       if (!data.success) {
-        if (data.needsToken) {
-          setStatus("no_token");
+        // Server loading — auto retry
+        if (data.retryAfter && attempt <= 3) {
+          const waitSec: number = data.retryAfter ?? 30;
+          setStatus("retrying");
+          setRetryCountdown(waitSec);
+
+          const countdown = setInterval(() => {
+            setRetryCountdown((prev) => {
+              if (prev <= 1) {
+                clearInterval(countdown);
+                convertImage(attempt + 1);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
           return;
         }
+
         setErrorMessage(data.error || "Konversi gagal.");
         setStatus("error");
         return;
@@ -128,82 +144,31 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
         </div>
         <div className="text-center space-y-1">
           <p className="text-sm text-gray-600 font-medium">
-            AI sedang mengubah foto kamu ke style chibi...
+            AI sedang mengubah foto kamu ke style anime chibi...
           </p>
           <p className="text-xs text-gray-400">
-            Proses membutuhkan 10–30 detik
+            Proses membutuhkan 10–30 detik · Gratis tanpa API key
           </p>
         </div>
       </div>
     );
   }
 
-  // ── No token ─────────────────────────────────────────────────
-  if (status === "no_token") {
+  // ── Retrying ─────────────────────────────────────────────────
+  if (status === "retrying") {
     return (
-      <div className="flex flex-col items-center gap-5 py-10 text-center">
-        <div className="text-5xl">🔑</div>
-        <div>
-          <h3 className="text-lg font-bold text-gray-800 mb-1">
-            fal.ai API Key Diperlukan
-          </h3>
-          <p className="text-gray-500 text-sm max-w-sm">
-            Daftar gratis di fal.ai — dapat free credits langsung, tidak perlu
-            upgrade atau kartu kredit.
-          </p>
-        </div>
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-left w-full max-w-sm">
-          <p className="text-sm font-semibold text-gray-700 mb-2">
-            Setup (2 menit, gratis):
-          </p>
-          <ol className="text-sm text-gray-600 space-y-1.5 list-decimal list-inside">
-            <li>
-              Daftar di{" "}
-              <a
-                href="https://fal.ai"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline"
-              >
-                fal.ai
-              </a>{" "}
-              (bisa pakai Google)
-            </li>
-            <li>
-              Buka{" "}
-              <a
-                href="https://fal.ai/dashboard/keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline"
-              >
-                fal.ai/dashboard/keys
-              </a>{" "}
-              → Create Key
-            </li>
-            <li>
-              Copy API key, buka{" "}
-              <code className="bg-gray-200 px-1 rounded text-xs">
-                .env.local
-              </code>
-            </li>
-            <li>
-              Ganti{" "}
-              <code className="bg-gray-200 px-1 rounded text-xs">
-                your_fal_key_here
-              </code>{" "}
-              dengan key kamu
-            </li>
-            <li>Restart dev server</li>
-          </ol>
-        </div>
-        <Button
-          variant="secondary"
-          onClick={handleRetry}
-          className="w-full max-w-xs"
-        >
-          Coba Lagi
-        </Button>
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <LoadingSpinner size="lg" />
+        <p className="text-primary font-semibold">
+          Server AI sedang loading...
+        </p>
+        <p className="text-gray-500 text-sm">
+          Otomatis mencoba lagi dalam{" "}
+          <span className="font-bold text-primary">{retryCountdown}</span> detik
+        </p>
+        <p className="text-xs text-gray-400 max-w-xs">
+          Ini normal saat pertama kali digunakan. Tunggu sebentar ya!
+        </p>
       </div>
     );
   }
@@ -238,7 +203,7 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
           Chibi Kamu Sudah Jadi! 🎉
         </h2>
         <p className="text-gray-600 text-sm">
-          Foto kamu sudah diubah ke style chibi. Lanjut lihat preview 3D figure!
+          Foto kamu sudah diubah ke style anime chibi. Lanjut lihat preview 3D!
         </p>
       </div>
 
@@ -256,7 +221,7 @@ const ChibiConverter: React.FC<ChibiConverterProps> = ({
 
       <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-4 py-2 text-sm text-brand-700">
         <span>✨</span>
-        <span>Powered by fal.ai Cartoonify</span>
+        <span>Powered by AnimeGANv2 — 100% gratis</span>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">

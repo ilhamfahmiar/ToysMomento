@@ -11,10 +11,14 @@ const nextConfig = {
         protocol: "https",
         hostname: "pbxt.replicate.delivery",
       },
-      // Replicate CDN
+      // Hugging Face Spaces output
       {
         protocol: "https",
-        hostname: "**.replicate.com",
+        hostname: "**.hf.space",
+      },
+      {
+        protocol: "https",
+        hostname: "akhaliq-animeganv2.hf.space",
       },
     ],
   },

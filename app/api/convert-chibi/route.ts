@@ -1,108 +1,159 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const MESHY_API_KEY = process.env.MESHY_API_KEY;
-const MESHY_API_BASE = "https://api.meshy.ai/openapi/v1";
+const FAL_KEY = process.env.FAL_KEY;
 
 /**
- * Meshy AI — Image to 3D API
- * Teknologi yang sama dipakai MakerWorld PrintU (Meshy-6)
+ * fal.ai — TRELLIS Image to 3D
  *
- * Pipeline:
- * 1. Upload foto → POST /image-to-3d → dapat task ID
- * 2. Poll task status hingga SUCCEEDED
- * 3. Return GLB URL untuk di-render di Three.js
+ * Model terbaik untuk image-to-3D, output GLB langsung.
+ * Harga: $0.02/model — free credits saat signup, tidak perlu upgrade.
  *
- * Daftar & API key: https://app.meshy.ai/api
- * Free tier: 200 credits/bulan (~20 model 3D gratis)
+ * Daftar di: https://fal.ai
+ * API key di: https://fal.ai/dashboard/keys
  */
 
-const POLL_INTERVAL_MS = 3000;
-const TIMEOUT_MS = 180000; // 3 menit
+const FAL_TRELLIS_URL = "https://queue.fal.run/fal-ai/trellis";
 
-interface MeshyTask {
-  id: string;
-  status: "PENDING" | "IN_PROGRESS" | "SUCCEEDED" | "FAILED" | "EXPIRED";
-  progress?: number;
-  model_urls?: {
-    glb?: string;
-    obj?: string;
-    fbx?: string;
-    usdz?: string;
-  };
-  thumbnail_url?: string;
-  error?: { message: string };
+interface FalQueueResponse {
+  request_id: string;
+  status: string;
 }
 
-async function createImageTo3DTask(imageDataUrl: string): Promise<string> {
-  const response = await fetch(`${MESHY_API_BASE}/image-to-3d`, {
+interface FalStatusResponse {
+  status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
+  logs?: Array<{ message: string }>;
+}
+
+interface FalResultResponse {
+  model_mesh?: {
+    url: string;
+    content_type: string;
+    file_name: string;
+  };
+  video?: { url: string };
+}
+
+const POLL_INTERVAL_MS = 3000;
+const TIMEOUT_MS = 180000;
+
+async function uploadImageToFal(
+  imageBuffer: ArrayBuffer,
+  mimeType: string,
+): Promise<string> {
+  // Upload image to fal storage, get public URL
+  const blob = new Blob([imageBuffer], { type: mimeType });
+
+  const uploadResponse = await fetch(
+    "https://rest.fal.run/storage/upload/initiate",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Key ${FAL_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        content_type: mimeType,
+        file_name: "upload.jpg",
+      }),
+    },
+  );
+
+  if (!uploadResponse.ok) {
+    throw new Error(`Storage initiate error: ${uploadResponse.status}`);
+  }
+
+  const { upload_url, file_url } = await uploadResponse.json();
+
+  // Upload actual file
+  const putResponse = await fetch(upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType },
+    body: blob,
+  });
+
+  if (!putResponse.ok) {
+    throw new Error(`File upload error: ${putResponse.status}`);
+  }
+
+  return file_url as string;
+}
+
+async function submitTrellisJob(imageUrl: string): Promise<string> {
+  const response = await fetch(FAL_TRELLIS_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${MESHY_API_KEY}`,
+      Authorization: `Key ${FAL_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      image_url: imageDataUrl,
-      ai_model: "meshy-6",
-      model_type: "standard",
-      should_texture: true,
-      should_remesh: false,
-      image_enhancement: true,
-      remove_lighting: true,
-      target_formats: ["glb"],
-      symmetry_mode: "auto",
+      image_url: imageUrl,
+      mesh_simplify: 0.95,
+      texture_size: 1024,
     }),
   });
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Meshy API error ${response.status}: ${errText}`);
+    throw new Error(`fal.ai submit error ${response.status}: ${errText}`);
   }
 
-  const data = await response.json();
-  return data.result as string; // task ID
+  const data = (await response.json()) as FalQueueResponse;
+  return data.request_id;
 }
 
-async function pollTask(taskId: string): Promise<MeshyTask> {
+async function pollFalJob(requestId: string): Promise<string> {
   const startTime = Date.now();
+  const statusUrl = `https://queue.fal.run/fal-ai/trellis/requests/${requestId}/status`;
+  const resultUrl = `https://queue.fal.run/fal-ai/trellis/requests/${requestId}`;
 
   while (Date.now() - startTime < TIMEOUT_MS) {
-    const response = await fetch(`${MESHY_API_BASE}/image-to-3d/${taskId}`, {
-      headers: {
-        Authorization: `Bearer ${MESHY_API_KEY}`,
-      },
+    const statusResponse = await fetch(statusUrl, {
+      headers: { Authorization: `Key ${FAL_KEY}` },
     });
 
-    if (!response.ok) {
-      throw new Error(`Poll error: ${response.status}`);
+    if (!statusResponse.ok) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      continue;
     }
 
-    const task = (await response.json()) as MeshyTask;
+    const status = (await statusResponse.json()) as FalStatusResponse;
 
-    if (task.status === "SUCCEEDED") {
-      return task;
+    if (status.status === "COMPLETED") {
+      const resultResponse = await fetch(resultUrl, {
+        headers: { Authorization: `Key ${FAL_KEY}` },
+      });
+
+      if (!resultResponse.ok) {
+        throw new Error(`Result fetch error: ${resultResponse.status}`);
+      }
+
+      const result = (await resultResponse.json()) as FalResultResponse;
+      const glbUrl = result.model_mesh?.url;
+
+      if (!glbUrl) {
+        throw new Error("GLB URL tidak tersedia dari hasil");
+      }
+
+      return glbUrl;
     }
 
-    if (task.status === "FAILED" || task.status === "EXPIRED") {
-      throw new Error(
-        `Task ${task.status}: ${task.error?.message ?? "unknown error"}`,
-      );
+    if (status.status === "FAILED") {
+      throw new Error("Job gagal di fal.ai");
     }
 
-    // PENDING or IN_PROGRESS — wait and poll again
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
 
-  throw new Error("Timeout: proses terlalu lama (>3 menit)");
+  throw new Error("Timeout: proses terlalu lama");
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Cek API key
-    if (!MESHY_API_KEY || MESHY_API_KEY === "your_meshy_key_here") {
+    if (!FAL_KEY || FAL_KEY === "your_fal_key_here") {
       return NextResponse.json(
         {
           success: false,
-          error: "MESHY_API_KEY belum dikonfigurasi.",
+          error: "FAL_KEY belum dikonfigurasi.",
           needsToken: true,
         },
         { status: 503 },
@@ -127,32 +178,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert to base64 data URL
     const imageBuffer = await imageFile.arrayBuffer();
-    const imageBase64 = Buffer.from(imageBuffer).toString("base64");
     const mimeType = imageFile.type || "image/jpeg";
-    const imageDataUrl = `data:${mimeType};base64,${imageBase64}`;
 
-    // Create Meshy task
-    const taskId = await createImageTo3DTask(imageDataUrl);
+    // Upload image to fal storage
+    const imageUrl = await uploadImageToFal(imageBuffer, mimeType);
+
+    // Submit TRELLIS job
+    const requestId = await submitTrellisJob(imageUrl);
 
     // Poll until done
-    const task = await pollTask(taskId);
+    const glbUrl = await pollFalJob(requestId);
 
-    const glbUrl = task.model_urls?.glb;
-    if (!glbUrl) {
-      throw new Error("GLB URL tidak tersedia dari hasil task");
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        glbUrl,
-        thumbnailUrl: task.thumbnail_url,
-        taskId,
-      },
-      { status: 200 },
-    );
+    return NextResponse.json({ success: true, glbUrl }, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[convert-chibi] Error:", message);

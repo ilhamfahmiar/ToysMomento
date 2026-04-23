@@ -18,10 +18,17 @@ interface ConversionResult {
   thumbnailUrl?: string;
 }
 
-// Extend props to pass GLB URL to parent
 interface ExtendedChibiConverterProps extends ChibiConverterProps {
   onConversionComplete: (glbUrl: string) => void;
 }
+
+const PROGRESS_STAGES = [
+  { pct: 10, label: "Menganalisis foto...", ms: 2000 },
+  { pct: 30, label: "Membuat struktur 3D...", ms: 10000 },
+  { pct: 55, label: "Menambahkan tekstur...", ms: 20000 },
+  { pct: 75, label: "Finishing model...", ms: 35000 },
+  { pct: 88, label: "Hampir selesai...", ms: 55000 },
+];
 
 const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
   sourceFile,
@@ -33,37 +40,29 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("Memulai...");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const stopProgress = () => {
-    if (progressRef.current) {
-      clearInterval(progressRef.current);
-      progressRef.current = null;
-    }
+  const clearTimers = () => {
+    timerRefs.current.forEach(clearTimeout);
+    timerRefs.current = [];
+  };
+
+  const startProgressAnimation = () => {
+    PROGRESS_STAGES.forEach(({ pct, label, ms }) => {
+      const t = setTimeout(() => {
+        setProgress(pct);
+        setProgressLabel(label);
+      }, ms);
+      timerRefs.current.push(t);
+    });
   };
 
   const convertImage = async () => {
     setStatus("converting");
     setResult(null);
-    setProgress(0);
-
-    // Simulate progress stages
-    const stages = [
-      { pct: 15, label: "Menganalisis foto...", delay: 2000 },
-      { pct: 35, label: "Membuat model 3D...", delay: 8000 },
-      { pct: 60, label: "Menambahkan tekstur...", delay: 15000 },
-      { pct: 80, label: "Finishing model...", delay: 25000 },
-      { pct: 90, label: "Hampir selesai...", delay: 40000 },
-    ];
-
-    let stageIdx = 0;
-    progressRef.current = setInterval(() => {
-      if (stageIdx < stages.length) {
-        setProgress(stages[stageIdx].pct);
-        setProgressLabel(stages[stageIdx].label);
-        stageIdx++;
-      }
-    }, 8000);
+    setProgress(5);
+    setProgressLabel("Memulai...");
+    startProgressAnimation();
 
     try {
       const formData = new FormData();
@@ -75,7 +74,7 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
       });
 
       const data = await response.json();
-      stopProgress();
+      clearTimers();
 
       if (!data.success) {
         if (data.needsToken) {
@@ -94,7 +93,7 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
       setResult({ glbUrl: data.glbUrl, thumbnailUrl: data.thumbnailUrl });
       setStatus("success");
     } catch (err) {
-      stopProgress();
+      clearTimers();
       console.error("Conversion error:", err);
       setErrorMessage("Konversi gagal. Periksa koneksi internet kamu.");
       setStatus("error");
@@ -103,7 +102,7 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
 
   useEffect(() => {
     convertImage();
-    return () => stopProgress();
+    return () => clearTimers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -128,11 +127,9 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
         </div>
         <div className="text-center space-y-1">
           <p className="text-sm text-gray-600 font-medium">
-            Meshy AI sedang membuat model 3D kamu
+            AI sedang membuat model 3D dari foto kamu
           </p>
-          <p className="text-xs text-gray-400">
-            Proses membutuhkan 1–3 menit — sama seperti MakerWorld PrintU
-          </p>
+          <p className="text-xs text-gray-400">Proses membutuhkan 1–3 menit</p>
         </div>
       </div>
     );
@@ -145,41 +142,41 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
         <div className="text-5xl">🔑</div>
         <div>
           <h3 className="text-lg font-bold text-gray-800 mb-1">
-            Meshy AI API Key Diperlukan
+            fal.ai API Key Diperlukan
           </h3>
           <p className="text-gray-500 text-sm max-w-sm">
-            Meshy AI adalah teknologi yang sama dipakai MakerWorld PrintU. Free
-            tier: 200 credits/bulan (~20 model 3D gratis).
+            Daftar gratis di fal.ai — dapat free credits langsung, tidak perlu
+            upgrade atau kartu kredit.
           </p>
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-left w-full max-w-sm">
           <p className="text-sm font-semibold text-gray-700 mb-2">
-            Setup (3 menit, gratis):
+            Setup (2 menit, gratis):
           </p>
           <ol className="text-sm text-gray-600 space-y-1.5 list-decimal list-inside">
             <li>
               Daftar di{" "}
               <a
-                href="https://app.meshy.ai"
+                href="https://fal.ai"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline"
               >
-                app.meshy.ai
+                fal.ai
               </a>{" "}
               (bisa pakai Google)
             </li>
             <li>
               Buka{" "}
               <a
-                href="https://app.meshy.ai/api"
+                href="https://fal.ai/dashboard/keys"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary underline"
               >
-                app.meshy.ai/api
+                fal.ai/dashboard/keys
               </a>{" "}
-              → Generate API Key
+              → Create Key
             </li>
             <li>Copy API key kamu</li>
             <li>
@@ -191,7 +188,7 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
             <li>
               Ganti{" "}
               <code className="bg-gray-200 px-1 rounded text-xs">
-                your_meshy_key_here
+                your_fal_key_here
               </code>{" "}
               dengan key kamu
             </li>
@@ -239,16 +236,15 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
           Model 3D Kamu Sudah Jadi! 🎉
         </h2>
         <p className="text-gray-600 text-sm">
-          Model 3D chibi kamu siap. Lanjut lihat preview interaktif!
+          Lanjut lihat preview 3D interaktif!
         </p>
       </div>
 
-      {/* Thumbnail preview */}
       {result?.thumbnailUrl && (
         <div className="relative w-48 h-48 rounded-2xl overflow-hidden border-4 border-brand-200 shadow-lg bg-white">
           <Image
             src={result.thumbnailUrl}
-            alt="Preview model 3D chibi kamu"
+            alt="Preview model 3D kamu"
             fill
             className="object-contain"
             unoptimized
@@ -258,7 +254,7 @@ const ChibiConverter: React.FC<ExtendedChibiConverterProps> = ({
 
       <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-4 py-2 text-sm text-brand-700">
         <span>✨</span>
-        <span>Powered by Meshy AI — teknologi yang sama dengan MakerWorld</span>
+        <span>Powered by TRELLIS AI — model 3D berkualitas tinggi</span>
       </div>
 
       <Button
